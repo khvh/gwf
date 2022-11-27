@@ -1,0 +1,25 @@
+id: example-api
+server:
+  port: 1823
+  dev: true
+  ui: true
+oas:
+  title: Example API
+  description: n/a
+  version: 1.0.0
+oauth:
+  client: oidc-client-id
+  secret: oidc-client-secret
+  realm: realmname
+  authorizationUrl: https://id.example.org/auth/realms/realmname/protocol/openid-connect/auth
+  tokenUrl: https://id.example.org/auth/realms/realmname/protocol/openid-connect/token
+  redirectUrl: https://id.example.org/auth/realms/realmname/protocol/openid-connect/auth
+  issuerUrl: https://id.example.org/auth/realms/realmname/protocol/openid-connect
+db:
+  url:
+    - http://db-hostname:8529
+  username: root
+  password: 12345
+  databaseName: example-api
+  collections:
+    - samples
