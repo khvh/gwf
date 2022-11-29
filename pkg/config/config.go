@@ -42,6 +42,7 @@ type Server struct {
 	Port int  `yaml:"port" json:"port,omitempty"`
 	Dev  bool `yaml:"dev" json:"dev,omitempty"`
 	UI   bool `yaml:"ui" json:"ui"`
+	Fork bool `yaml:"fork" json:"fork"`
 }
 
 // Configuration is main config object

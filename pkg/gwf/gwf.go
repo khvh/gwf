@@ -35,6 +35,7 @@ func Create(static embed.FS) *App {
 
 	server := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
+		Prefork:               config.Get().Server.Fork,
 	})
 
 	server.Use("/docs", filesystem.New(filesystem.Config{
