@@ -48,6 +48,11 @@ func main() {
 						Patch[dto.Sample, dto.Sample]("/some/:id/path/:subId", h),
 				),
 		).
+		Fiber(func(app *fiber.App) {
+			app.Get("/test", func(c *fiber.Ctx) error {
+				return c.JSON(true)
+			})
+		}).
 		Frontend(ui, path.Join("ui")).
 		Run()
 }

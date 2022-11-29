@@ -143,6 +143,12 @@ func (a *App) RegisterRoutes(r *router.Router) *App {
 	return a
 }
 
+// Fiber registers routes directly with fiber
+func (a *App) Fiber(fn func(app *fiber.App)) *App {
+	fn(a.server)
+	return a
+}
+
 // Run runs the application
 func (a *App) Run() {
 	id := config.Get().ID
