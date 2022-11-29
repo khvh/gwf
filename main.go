@@ -12,7 +12,7 @@ import (
 )
 
 func h(c *fiber.Ctx) error {
-	return c.JSON(nil)
+	return c.JSON(fiber.Map{"status": true})
 }
 
 //go:embed docs/*
@@ -30,13 +30,14 @@ func main() {
 
 	gwf.
 		Create(content).
-		Frontend(ui, path.Join("ui")).
 		RegisterRoutes(
 			router.
 				Instance().
+				Group("tests").
+				Prefix("/api/v1").
 				Register(
 					router.
-						Get[dto.Sample]("/some/:id/path/:subId", h),
+						Get[dto.Sample]("/some/:id/path/:subId", h).Summary("Testing summary").Description("kek"),
 					router.
 						Delete[dto.Sample]("/some/:id/path/:subId", h),
 					router.
@@ -47,5 +48,6 @@ func main() {
 						Patch[dto.Sample, dto.Sample]("/some/:id/path/:subId", h),
 				),
 		).
+		Frontend(ui, path.Join("ui")).
 		Run()
 }

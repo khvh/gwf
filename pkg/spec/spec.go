@@ -44,12 +44,14 @@ type apiResponse struct {
 
 // OAS is the main structure for OpenAPI generation
 type OAS struct {
-	path   string
-	method string
-	in     interface{}
-	params []string
-	out    []*apiResponse
-	tags   []string
+	path        string
+	method      string
+	in          interface{}
+	params      []string
+	out         []*apiResponse
+	tags        []string
+	summary     string
+	description string
 }
 
 // Of returns an instance of OAS
@@ -60,6 +62,13 @@ func Of(path string, tags ...string) *OAS {
 	}
 
 	return oas.parseParams()
+}
+
+// AddPrefix adds an url prefix
+func (o *OAS) AddPrefix(prefix string) *OAS {
+	o.path = strings.ReplaceAll(fmt.Sprintf("%s/%s", prefix, o.path), "//", "/")
+
+	return o.parseParams()
 }
 
 // Get handles the GET request spec
@@ -119,6 +128,36 @@ func (o *OAS) Patch(body interface{}, data interface{}, code ...int) *OAS {
 		withBadRequest().
 		withInternalError().
 		withMethod(http.MethodPatch)
+
+	return o
+}
+
+// AddSummary adds a summary for the route
+func (o *OAS) AddSummary(summary string) *OAS {
+	o.summary = summary
+
+	return o
+}
+
+// AddDescription adds a description for the route
+func (o *OAS) AddDescription(description string) *OAS {
+	o.description = description
+
+	return o
+}
+
+// AddTags appends tags
+func (o *OAS) AddTags(tags ...string) *OAS {
+	for _, tag := range tags {
+		o.tags = append(o.tags, tag)
+	}
+
+	return o
+}
+
+// ReplaceTags replaces oas tags
+func (o *OAS) ReplaceTags(tags ...string) *OAS {
+	o.tags = tags
 
 	return o
 }
@@ -206,12 +245,18 @@ func (o *OAS) Build(ref *openapi3.Reflector) *OAS {
 		})
 	}
 
-	op.WithParameters(params...)
-
-	op.WithTags(o.tags...)
+	op.
+		WithParameters(params...).
+		WithTags(o.tags...).
+		WithSummary(o.summary).
+		WithDescription(o.description)
 
 	for _, response := range o.out {
 		handleError(ref.SetJSONResponse(&op, response.body, response.code))
+	}
+
+	if o.method == http.MethodPost || o.method == http.MethodPut || o.method == http.MethodPatch {
+		handleError(ref.SetRequest(&op, o.in, o.method))
 	}
 
 	handleError(ref.Spec.AddOperation(o.method, o.path, op))

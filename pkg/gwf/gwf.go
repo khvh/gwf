@@ -2,6 +2,7 @@ package gwf
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/gofiber/contrib/otelfiber"
@@ -17,6 +18,7 @@ import (
 	"github.com/khvh/gwf/pkg/util"
 	"github.com/rs/zerolog/log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -66,8 +68,27 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 
 		log.Trace().Msg("Frontend dev server proxy started")
 
+		fePort := 3000
+
+		file, err := os.ReadFile(dir + "/package.json")
+		if err != nil {
+			log.Trace().Err(err).Send()
+		}
+
+		var packageJson map[string]interface{}
+
+		err = json.Unmarshal(file, &packageJson)
+		if err != nil {
+			log.Trace().Err(err).Send()
+		} else {
+			fePort = int(packageJson["devPort"].(float64))
+		}
+
 		a.server.Get("/*", func(c *fiber.Ctx) error {
-			err := proxy.Do(c, strings.ReplaceAll(c.Request().URI().String(), strconv.Itoa(config.Get().Server.Port), "5174"))
+			err := proxy.
+				Do(c, strings.
+					ReplaceAll(c.Request().URI().String(), strconv.Itoa(config.Get().Server.Port), strconv.Itoa(fePort)),
+				)
 			if err != nil {
 				log.Err(err).Send()
 			}

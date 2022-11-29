@@ -5,3 +5,4 @@ tmp/
 
 ui/dist/*
 !ui/dist/.gitkeep.idea
+.DS_Store

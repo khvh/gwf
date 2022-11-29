@@ -25,8 +25,31 @@ type Route struct {
 	handlers []fiber.Handler
 }
 
+// Summary adds a summary to the route
+func (r *Route) Summary(summary string) *Route {
+	r.spec.AddSummary(summary)
+
+	return r
+}
+
+// Tags add tags for the route
+func (r *Route) Tags(tags ...string) *Route {
+	r.spec.AddTags(tags...)
+
+	return r
+}
+
+// Description add tags for the route
+func (r *Route) Description(description string) *Route {
+	r.spec.AddDescription(description)
+
+	return r
+}
+
 // Router holds the reference for openapi3.Reflector and routes
 type Router struct {
+	prefix string
+	group  string
 	routes []*Route
 	ref    *openapi3.Reflector
 }
@@ -105,9 +128,31 @@ func (r *Router) Register(routes ...*Route) *Router {
 	return r
 }
 
+// Prefix adds an url prefix
+func (r *Router) Prefix(url string) *Router {
+	r.prefix = url
+
+	return r
+}
+
+// Group groups routes under a common tag
+func (r *Router) Group(name string) *Router {
+	r.group = name
+
+	return r
+}
+
 // Build builds the OpenAPI spec and registers handlers with Fiber
 func (r *Router) Build(app *fiber.App) {
 	for _, route := range r.routes {
+		if r.prefix != "" {
+			route.spec.AddPrefix(r.prefix)
+		}
+
+		if r.group != "" {
+			route.spec.ReplaceTags(r.group)
+		}
+
 		route.spec.Build(r.ref)
 
 		r.useRoute(route, app)
@@ -136,7 +181,11 @@ func (r *Router) Build(app *fiber.App) {
 	})
 }
 
-func (r *Router) useRoute(route *Route, app *fiber.App) {
+func (r *Router) useRoute(route *Route, app fiber.Router) {
+	if r.prefix != "" {
+		app = app.Group(r.prefix)
+	}
+
 	switch route.method {
 	case http.MethodGet:
 		app.Get(route.path, route.handlers...)
@@ -191,7 +240,7 @@ func Post[T interface{}, D interface{}](path string, handlers ...fiber.Handler) 
 	return &Route{
 		path:     path,
 		spec:     spec.Of(path, getPackage(pc)).Post(t, d),
-		method:   http.MethodGet,
+		method:   http.MethodPost,
 		handlers: handlers,
 	}
 }
@@ -208,7 +257,7 @@ func Put[T interface{}, D interface{}](path string, handlers ...fiber.Handler) *
 	return &Route{
 		path:     path,
 		spec:     spec.Of(path, getPackage(pc)).Put(t, d),
-		method:   http.MethodGet,
+		method:   http.MethodPut,
 		handlers: handlers,
 	}
 }
