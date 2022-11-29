@@ -16,6 +16,12 @@ import (
 	"sync"
 )
 
+type Ctx[B interface{}, P interface{}] struct {
+	Body   B
+	Params P
+	//Query  Q
+}
+
 // Route is a structure for holding data for building OpenAPI spec
 // and handling requests with Fiber
 type Route struct {
@@ -276,6 +282,25 @@ func Patch[T interface{}, D interface{}](path string, handlers ...fiber.Handler)
 		spec:     spec.Of(path, getPackage(pc)).Patch(t, d),
 		method:   http.MethodPatch,
 		handlers: handlers,
+	}
+}
+
+// GetCtx parses and returns Ctx
+func GetCtx[B interface{}, P interface{}](c *fiber.Ctx) *Ctx[B, P] {
+	var (
+		b B
+		p P
+	)
+
+	if err := c.BodyParser(&b); err != nil {
+	}
+
+	if err := c.ParamsParser(&p); err != nil {
+	}
+
+	return &Ctx[B, P]{
+		Body:   b,
+		Params: p,
 	}
 }
 

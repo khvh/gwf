@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/core/dto"
@@ -13,6 +14,14 @@ import (
 
 func h(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": true})
+}
+
+func p(c *fiber.Ctx) error {
+	asd := router.GetCtx[dto.Sample, dto.Sample](c)
+
+	fmt.Println(asd.Body.ID)
+
+	return c.JSON(asd)
 }
 
 //go:embed docs/*
@@ -41,7 +50,7 @@ func main() {
 					router.
 						Delete[dto.Sample]("/some/:id/path/:subId", h),
 					router.
-						Post[dto.Sample, dto.Sample]("/some/:id/path", h),
+						Post[dto.Sample, dto.Sample]("/some/:id/path", p),
 					router.
 						Put[dto.Sample, dto.Sample]("/some/:id/path/:subId", h),
 					router.
