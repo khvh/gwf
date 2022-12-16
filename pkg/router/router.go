@@ -9,11 +9,9 @@ import (
 	"github.com/swaggest/openapi-go/openapi3"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	"log"
 	"net/http"
 	"runtime"
 	"strings"
-	"sync"
 )
 
 type Ctx[B interface{}, P interface{}] struct {
@@ -57,33 +55,22 @@ type Router struct {
 	prefix string
 	group  string
 	routes []*Route
-	ref    *openapi3.Reflector
 }
 
-var (
-	lock     = &sync.Mutex{}
-	instance *Router
-)
+//var (
+//	lock     = &sync.Mutex{}
+//	instance *Router
+//)
 
 // Instance is a singleton returning method for Router
 func Instance() *Router {
-	lock.Lock()
-
-	defer lock.Unlock()
-
-	if instance == nil {
-		ref := initReflector()
-
-		instance = &Router{
-			routes: []*Route{},
-			ref:    ref,
-		}
+	return &Router{
+		routes: []*Route{},
 	}
-
-	return instance
 }
 
-func initReflector() *openapi3.Reflector {
+// InitReflector ...
+func InitReflector() *openapi3.Reflector {
 	conf := config.Get()
 	ref := &openapi3.Reflector{}
 
@@ -149,7 +136,7 @@ func (r *Router) Group(name string) *Router {
 }
 
 // Build builds the OpenAPI spec and registers handlers with Fiber
-func (r *Router) Build(app *fiber.App) {
+func (r *Router) Build(ref *openapi3.Reflector, app *fiber.App) {
 	for _, route := range r.routes {
 		if r.prefix != "" {
 			route.spec.AddPrefix(r.prefix)
@@ -159,32 +146,10 @@ func (r *Router) Build(app *fiber.App) {
 			route.spec.ReplaceTags(r.group)
 		}
 
-		route.spec.Build(r.ref)
+		route.spec.Build(ref)
 
 		r.useRoute(route, app)
 	}
-
-	yamlSchema, err := r.ref.Spec.MarshalYAML()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	jsonSchema, err := r.ref.Spec.MarshalJSON()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	app.Get("/spec/spec.json", func(c *fiber.Ctx) error {
-		c.Set("content-type", "application/openapi+json")
-
-		return c.SendString(string(jsonSchema))
-	})
-
-	app.Get("/spec/spec.yaml", func(c *fiber.Ctx) error {
-		c.Set("content-type", "application/openapi+yaml")
-
-		return c.SendString(string(yamlSchema))
-	})
 }
 
 func (r *Router) useRoute(route *Route, app fiber.Router) {

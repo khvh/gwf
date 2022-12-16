@@ -42,19 +42,36 @@ func main() {
 		RegisterRoutes(
 			router.
 				Instance().
-				Group("tests").
+				Group("asd").
 				Prefix("/api/v1").
 				Register(
 					router.
-						Get[dto.Sample]("/some/:id/path/:subId", h).Summary("Testing summary").Description("kek"),
+						Get[dto.Sample]("/some/:id/path/:subId", h).Summary("Testing summary").Description("kek").Tags("1"),
 					router.
-						Delete[dto.Sample]("/some/:id/path/:subId", h),
+						Delete[dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
 					router.
-						Post[dto.Sample, dto.Sample]("/some/:id/path", p),
+						Post[dto.Sample, dto.Sample]("/some/:id/path", p).Tags("1"),
 					router.
-						Put[dto.Sample, dto.Sample]("/some/:id/path/:subId", h),
+						Put[dto.Sample, dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
 					router.
-						Patch[dto.Sample, dto.Sample]("/some/:id/path/:subId", h),
+						Patch[dto.Sample, dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
+				),
+
+			router.
+				Instance().
+				Group("asd2").
+				Prefix("/api/v2").
+				Register(
+					router.
+						Get[dto.Sample]("/2some/:id/path/:subId", h).Summary("Testing summary").Description("kek").Tags("2"),
+					router.
+						Delete[dto.Sample]("/2some/:id/path/:subId", h).Tags("2"),
+					router.
+						Post[dto.Sample, dto.Sample]("/2some/:id/path", p).Tags("2"),
+					router.
+						Put[dto.Sample, dto.Sample]("/2some/:id/path/:subId", h).Tags("2"),
+					router.
+						Patch[dto.Sample, dto.Sample]("/2some/:id/path/:subId", h).Tags("2"),
 				),
 		).
 		Fiber(func(app *fiber.App) {

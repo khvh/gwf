@@ -17,6 +17,7 @@ import (
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/khvh/gwf/pkg/util"
 	"github.com/rs/zerolog/log"
+	"github.com/swaggest/openapi-go/openapi3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 // App is a structure for handling application things
 type App struct {
 	server *fiber.App
+	ref    *openapi3.Reflector
 }
 
 // Create creates a new application instance
@@ -55,7 +57,8 @@ func Create(static embed.FS) *App {
 	server.Get("/monitor", monitor.New(monitor.Config{Title: id}))
 
 	return &App{
-		server,
+		ref:    router.InitReflector(),
+		server: server,
 	}
 }
 
@@ -138,8 +141,32 @@ func (a *App) startYarnDev(dir string) {
 }
 
 // RegisterRoutes registers router.Router routes
-func (a *App) RegisterRoutes(r *router.Router) *App {
-	r.Build(a.server)
+func (a *App) RegisterRoutes(routes ...*router.Router) *App {
+	for _, r := range routes {
+		r.Build(a.ref, a.server)
+	}
+
+	yamlSchema, err := a.ref.Spec.MarshalYAML()
+	if err != nil {
+		log.Fatal().Err(err)
+	}
+
+	jsonSchema, err := a.ref.Spec.MarshalJSON()
+	if err != nil {
+		log.Fatal().Err(err)
+	}
+
+	a.server.Get("/spec/spec.json", func(c *fiber.Ctx) error {
+		c.Set("content-type", "application/openapi+json")
+
+		return c.SendString(string(jsonSchema))
+	})
+
+	a.server.Get("/spec/spec.yaml", func(c *fiber.Ctx) error {
+		c.Set("content-type", "application/openapi+yaml")
+
+		return c.SendString(string(yamlSchema))
+	})
 
 	return a
 }
