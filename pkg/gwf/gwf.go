@@ -4,62 +4,112 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/contrib/otelfiber"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/monitor"
-	"github.com/gofiber/fiber/v2/middleware/proxy"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/khvh/gwf/pkg/util"
+	"github.com/labstack/echo-contrib/prometheus"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog/log"
 	"github.com/swaggest/openapi-go/openapi3"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	trace "go.opentelemetry.io/otel/trace"
+	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 )
+
+var tracerInstance trace.Tracer
+
+const tracerKey = "otel-go-contrib-tracer-labstack-echo"
+
+func Tracer() trace.Tracer {
+	return tracerInstance
+}
+
+// GetTracer returns trace.Tracer from request context
+func GetTracer(c echo.Context) trace.Tracer {
+	return c.Get("otel-go-contrib-tracer-labstack-echo").(trace.Tracer)
+}
 
 // App is a structure for handling application things
 type App struct {
-	server *fiber.App
+	server *echo.Echo
 	ref    *openapi3.Reflector
+}
+
+func getFileSystem(embededFiles embed.FS) http.FileSystem {
+	sub, err := fs.Sub(embededFiles, ".")
+	if err != nil {
+		panic(err)
+	}
+
+	return http.FS(sub)
 }
 
 // Create creates a new application instance
 func Create(static embed.FS) *App {
 	id := config.Get().ID
 
-	server := fiber.New(fiber.Config{
-		DisableStartupMessage: true,
-		Prefork:               config.Get().Server.Fork,
-	})
+	otel.Tracer(id)
 
-	server.Use("/docs", filesystem.New(filesystem.Config{
-		Root:       http.FS(static),
-		PathPrefix: "/docs",
-		Browse:     false,
-	}))
+	assetHandler := http.FileServer(getFileSystem(static))
 
-	prometheus := fiberprometheus.New(id)
-	prometheus.RegisterAt(server, "/metrics")
+	fmt.Println(id)
 
-	server.Use(otelfiber.Middleware(id))
-	server.Use(prometheus.Middleware)
-	server.Use(requestid.New())
-	server.Use(recover.New())
-	server.Use(cors.New())
-	server.Get("/monitor", monitor.New(monitor.Config{Title: id}))
+	server := echo.New()
+
+	server.HideBanner = true
+	server.HidePort = true
+
+	server.GET("/*", echo.WrapHandler(http.StripPrefix("/", assetHandler)))
+
+	server.Use(middleware.RequestID())
+	server.Use(middleware.CORS())
+	server.Use(middleware.Recover())
+
+	prometheus.NewPrometheus(id, nil).Use(server)
 
 	return &App{
 		ref:    router.InitReflector(),
 		server: server,
 	}
+}
+
+func (a *App) EnableTracing() *App {
+	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint("http://localhost:14268/api/traces")))
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(config.Get().ID),
+			),
+		),
+	)
+
+	otel.
+		SetTracerProvider(tp)
+	otel.
+		SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	a.server.Use(otelecho.Middleware(config.Get().ID))
+
+	return a
 }
 
 func (a *App) Frontend(ui embed.FS, dir string) *App {
@@ -79,26 +129,22 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 			log.Trace().Err(err).Send()
 		}
 
-		var packageJson map[string]interface{}
+		var packageJSON map[string]interface{}
 
-		err = json.Unmarshal(file, &packageJson)
+		err = json.Unmarshal(file, &packageJSON)
 		if err != nil {
 			log.Trace().Err(err).Send()
 		} else {
-			fePort = int(packageJson["devPort"].(float64))
+			fePort = int(packageJSON["devPort"].(float64))
 		}
 
-		a.server.Get("/*", func(c *fiber.Ctx) error {
-			err := proxy.
-				Do(c, strings.
-					ReplaceAll(c.Request().URI().String(), strconv.Itoa(config.Get().Server.Port), strconv.Itoa(fePort)),
-				)
-			if err != nil {
-				log.Err(err).Send()
-			}
+		u, _ := url.Parse("http://localhost:" + strconv.Itoa(fePort))
 
-			return c.Send(c.Response().Body())
-		})
+		a.server.Use(middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
+			{
+				URL: u,
+			},
+		})))
 	} else {
 		return a.mountFrontend(ui, dir)
 	}
@@ -109,11 +155,11 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 func (a *App) mountFrontend(ui embed.FS, dir string) *App {
 	a.buildYarn(dir)
 
-	a.server.Use("/*", filesystem.New(filesystem.Config{
-		Root:       http.FS(ui),
-		PathPrefix: "ui/dist",
-		Browse:     false,
-	}))
+	//a.server.Use("/*", filesystem.New(filesystem.Config{
+	//	Root:       http.FS(ui),
+	//	PathPrefix: "ui/dist",
+	//	Browse:     false,
+	//}))
 
 	log.Trace().Msg("Frontend mounted")
 
@@ -156,24 +202,18 @@ func (a *App) RegisterRoutes(routes ...*router.Router) *App {
 		log.Fatal().Err(err)
 	}
 
-	a.server.Get("/spec/spec.json", func(c *fiber.Ctx) error {
+	a.server.GET("/spec/spec.json", func(c echo.Context) error {
 		c.Set("content-type", "application/openapi+json")
 
-		return c.SendString(string(jsonSchema))
+		return c.String(http.StatusOK, string(jsonSchema))
 	})
 
-	a.server.Get("/spec/spec.yaml", func(c *fiber.Ctx) error {
+	a.server.GET("/spec/spec.yaml", func(c echo.Context) error {
 		c.Set("content-type", "application/openapi+yaml")
 
-		return c.SendString(string(yamlSchema))
+		return c.String(http.StatusOK, string(yamlSchema))
 	})
 
-	return a
-}
-
-// Fiber registers routes directly with fiber
-func (a *App) Fiber(fn func(app *fiber.App)) *App {
-	fn(a.server)
 	return a
 }
 
@@ -198,5 +238,5 @@ func (a *App) Run() {
 
 	log.Info().Msgf("%s started 🚀", id)
 
-	log.Fatal().Err(a.server.Listen(fmt.Sprintf("0.0.0.0:%d", port))).Send()
+	log.Fatal().Err(a.server.Start(fmt.Sprintf("0.0.0.0:%d", port))).Send()
 }
