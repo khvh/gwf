@@ -8,7 +8,6 @@ import (
 	"github.com/khvh/gwf/pkg/logger"
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/labstack/echo/v4"
-	"path"
 )
 
 func h(c echo.Context) error {
@@ -74,6 +73,6 @@ func main() {
 						Patch[dto.Sample, dto.Sample]("/2some/:id/path/:subId", h).Tags("2"),
 				),
 		).
-		Frontend(ui, path.Join("ui")).
+		//Frontend(ui, path.Join("ui")).
 		Run()
 }
