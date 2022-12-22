@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/core/dto"
 	"github.com/khvh/gwf/pkg/gwf"

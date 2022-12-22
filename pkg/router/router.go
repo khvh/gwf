@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/spec"
 	"github.com/khvh/gwf/pkg/util"
@@ -22,7 +21,7 @@ type Ctx[B interface{}, P interface{}] struct {
 }
 
 // Route is a structure for holding data for building OpenAPI spec
-// and handling requests with Fiber
+// and handling requests with Echo
 type Route struct {
 	path    string
 	method  string
@@ -137,7 +136,7 @@ func (r *Router) Group(name string) *Router {
 	return r
 }
 
-// Build builds the OpenAPI spec and registers handlers with Fiber
+// Build builds the OpenAPI spec and registers handlers with Echo
 func (r *Router) Build(ref *openapi3.Reflector, app *echo.Echo) {
 	for _, route := range r.routes {
 		if r.prefix != "" {
@@ -271,23 +270,23 @@ func Patch[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFu
 }
 
 // GetCtx parses and returns Ctx
-func GetCtx[B interface{}, P interface{}](c *fiber.Ctx) *Ctx[B, P] {
-	var (
-		b B
-		p P
-	)
+// func GetCtx[B interface{}, P interface{}](c echo.Context) *Ctx[B, P] {
+// 	var (
+// 		b B
+// 		p P
+// 	)
 
-	if err := c.BodyParser(&b); err != nil {
-	}
+// 	if err := c.BodyParser(&b); err != nil {
+// 	}
 
-	if err := c.ParamsParser(&p); err != nil {
-	}
+// 	if err := c.ParamsParser(&p); err != nil {
+// 	}
 
-	return &Ctx[B, P]{
-		Body:   b,
-		Params: p,
-	}
-}
+// 	return &Ctx[B, P]{
+// 		Body:   b,
+// 		Params: p,
+// 	}
+// }
 
 func getPackage(pc uintptr) string {
 	funcName := runtime.FuncForPC(pc).Name()
