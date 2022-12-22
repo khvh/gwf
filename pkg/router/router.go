@@ -2,16 +2,18 @@ package router
 
 import (
 	"fmt"
+	"net/http"
+	"runtime"
+	"strings"
+
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/spec"
 	"github.com/khvh/gwf/pkg/util"
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog/log"
 	"github.com/swaggest/openapi-go/openapi3"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	"net/http"
-	"runtime"
-	"strings"
 )
 
 type Ctx[B interface{}, P interface{}] struct {
@@ -270,23 +272,25 @@ func Patch[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFu
 }
 
 // GetCtx parses and returns Ctx
-// func GetCtx[B interface{}, P interface{}](c echo.Context) *Ctx[B, P] {
-// 	var (
-// 		b B
-// 		p P
-// 	)
+func GetCtx[B interface{}, P interface{}](c echo.Context) *Ctx[B, P] {
+	var (
+		b B
+		p P
+	)
 
-// 	if err := c.BodyParser(&b); err != nil {
-// 	}
+	if err := c.Bind(&b); err != nil {
+		log.Trace().Err(err).Send()
+	}
 
-// 	if err := c.ParamsParser(&p); err != nil {
-// 	}
+	if err := (&echo.DefaultBinder{}).BindPathParams(c, &p); err != nil {
+		log.Trace().Err(err).Send()
+	}
 
-// 	return &Ctx[B, P]{
-// 		Body:   b,
-// 		Params: p,
-// 	}
-// }
+	return &Ctx[B, P]{
+		Body:   b,
+		Params: p,
+	}
+}
 
 func getPackage(pc uintptr) string {
 	funcName := runtime.FuncForPC(pc).Name()
