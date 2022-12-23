@@ -13,6 +13,7 @@ import (
 
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
+	"github.com/khvh/gwf/pkg/telemetry"
 	"github.com/khvh/gwf/pkg/util"
 	"github.com/labstack/echo-contrib/prometheus"
 	"github.com/labstack/echo/v4"
@@ -21,25 +22,7 @@ import (
 	"github.com/swaggest/openapi-go/openapi3"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/jaeger"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
-	trace "go.opentelemetry.io/otel/trace"
 )
-
-var tracerInstance trace.Tracer
-
-// Tracer returns a tracer instance
-func Tracer() trace.Tracer {
-	return tracerInstance
-}
-
-// GetTracer returns trace.Tracer from request context
-func GetTracer(c echo.Context) trace.Tracer {
-	return c.Get("otel-go-contrib-tracer-labstack-echo").(trace.Tracer)
-}
 
 // App is a structure for handling application things
 type App struct {
@@ -104,26 +87,7 @@ func Create(static embed.FS) *App {
 
 // EnableTracing enables tracing
 func (a *App) EnableTracing() *App {
-	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(config.Get().Telemetry.JaegerEndpoint)))
-	if err != nil {
-		log.Fatal().Err(err).Send()
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(
-			resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceNameKey.String(config.Get().ID),
-			),
-		),
-	)
-
-	otel.
-		SetTracerProvider(tp)
-	otel.
-		SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	telemetry.New()
 
 	a.server.Use(otelecho.Middleware(config.Get().ID))
 
