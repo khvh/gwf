@@ -31,7 +31,7 @@ type App struct {
 }
 
 func getFileSystem(embededFiles embed.FS) http.FileSystem {
-	sub, err := fs.Sub(embededFiles, ".")
+	sub, err := fs.Sub(embededFiles, "docs")
 	if err != nil {
 		panic(err)
 	}
@@ -41,6 +41,15 @@ func getFileSystem(embededFiles embed.FS) http.FileSystem {
 
 // Create creates a new application instance
 func Create(static embed.FS) *App {
+	a, err := fs.Sub(static, "docs")
+	if err != nil {
+		log.Err(err).Send()
+	}
+
+	f, err := a.Open("index.html")
+
+	log.Info().Interface("f", f).Interface("a", a).Send()
+
 	id := config.Get().ID
 
 	otel.Tracer(id)
@@ -54,7 +63,8 @@ func Create(static embed.FS) *App {
 
 	server.Pre(middleware.RemoveTrailingSlash())
 
-	server.GET("/*", echo.WrapHandler(http.StripPrefix("/", assetHandler)))
+	server.GET("/docs", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
+	server.GET("/docs/*", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
 
 	server.Use(middleware.RequestID())
 	server.Use(middleware.CORS())

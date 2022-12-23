@@ -23,7 +23,7 @@ func p(c echo.Context) error {
 	return c.JSON(200, true)
 }
 
-//go:embed docs/*
+//go:embed docs
 var content embed.FS
 
 //go:embed ui/dist/*
@@ -38,7 +38,7 @@ func main() {
 
 	gwf.
 		Create(content).
-		EnableTracing().
+		// EnableTracing().
 		RegisterRoutes(
 			router.
 				Instance().
