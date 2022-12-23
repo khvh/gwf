@@ -10,6 +10,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// TelemetryConfig ...
+type TelemetryConfig struct {
+	JaegerEndpoint string `yaml:"jaeger_endpoint"`
+}
+
 // OASConfig ...
 type OASConfig struct {
 	Title       string `yaml:"title"`
@@ -43,15 +48,17 @@ type Server struct {
 	Dev  bool `yaml:"dev" json:"dev,omitempty"`
 	UI   bool `yaml:"ui" json:"ui"`
 	Fork bool `yaml:"fork" json:"fork"`
+	Log  bool `yaml:"log" json:"log"`
 }
 
 // Configuration is main config object
 type Configuration struct {
-	ID       string          `json:"id,omitempty" yaml:"id,omitempty"`
-	Server   *Server         `json:"server,omitempty" yaml:"server,omitempty"`
-	OAS      *OASConfig      `json:"oas" yaml:"oas"`
-	OAuth    *OAuthConfig    `json:"oauth" yaml:"oauth"`
-	Database *DatabaseConfig `json:"db" yaml:"db"`
+	ID        string           `json:"id,omitempty" yaml:"id,omitempty"`
+	Server    *Server          `json:"server,omitempty" yaml:"server,omitempty"`
+	OAS       *OASConfig       `json:"oas" yaml:"oas"`
+	OAuth     *OAuthConfig     `json:"oauth" yaml:"oauth"`
+	Database  *DatabaseConfig  `json:"db" yaml:"db"`
+	Telemetry *TelemetryConfig `json:"telemetry" yaml:"telemetry"`
 }
 
 var conf *Configuration

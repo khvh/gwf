@@ -4,6 +4,13 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"strconv"
+
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/khvh/gwf/pkg/util"
@@ -20,18 +27,11 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	trace "go.opentelemetry.io/otel/trace"
-	"io/fs"
-	"net/http"
-	"net/url"
-	"os"
-	"os/exec"
-	"strconv"
 )
 
 var tracerInstance trace.Tracer
 
-const tracerKey = "otel-go-contrib-tracer-labstack-echo"
-
+// Tracer returns a tracer instance
 func Tracer() trace.Tracer {
 	return tracerInstance
 }
@@ -64,12 +64,12 @@ func Create(static embed.FS) *App {
 
 	assetHandler := http.FileServer(getFileSystem(static))
 
-	fmt.Println(id)
-
 	server := echo.New()
 
 	server.HideBanner = true
 	server.HidePort = true
+
+	server.Pre(middleware.RemoveTrailingSlash())
 
 	server.GET("/*", echo.WrapHandler(http.StripPrefix("/", assetHandler)))
 
@@ -79,14 +79,32 @@ func Create(static embed.FS) *App {
 
 	prometheus.NewPrometheus(id, nil).Use(server)
 
+	if config.Get().Server.Dev || config.Get().Server.Log {
+		server.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+			LogURI:    true,
+			LogStatus: true,
+			LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+				log.Trace().
+					Str("method", c.Request().Method).
+					Int("code", v.Status).
+					Str("uri", v.URI).
+					Str("from", c.Request().RemoteAddr).
+					Send()
+
+				return nil
+			},
+		}))
+	}
+
 	return &App{
 		ref:    router.InitReflector(),
 		server: server,
 	}
 }
 
+// EnableTracing enables tracing
 func (a *App) EnableTracing() *App {
-	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint("http://localhost:14268/api/traces")))
+	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(config.Get().Telemetry.JaegerEndpoint)))
 	if err != nil {
 		log.Fatal().Err(err).Send()
 	}
@@ -112,6 +130,7 @@ func (a *App) EnableTracing() *App {
 	return a
 }
 
+// Frontend serves frontend project from ui dir
 func (a *App) Frontend(ui embed.FS, dir string) *App {
 	if !config.Get().Server.Dev || !config.Get().Server.UI {
 		return a
