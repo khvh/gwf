@@ -6,11 +6,10 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/spec"
 	"github.com/khvh/gwf/pkg/util"
-	"github.com/labstack/echo/v4"
-	"github.com/rs/zerolog/log"
 	"github.com/swaggest/openapi-go/openapi3"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -23,13 +22,12 @@ type Ctx[B interface{}, P interface{}] struct {
 }
 
 // Route is a structure for holding data for building OpenAPI spec
-// and handling requests with Echo
+// and handling requests with Fiber
 type Route struct {
-	path    string
-	method  string
-	spec    *spec.OAS
-	handler echo.HandlerFunc
-	mw      []echo.MiddlewareFunc
+	path     string
+	method   string
+	spec     *spec.OAS
+	handlers []fiber.Handler
 }
 
 // Summary adds a summary to the route
@@ -138,8 +136,8 @@ func (r *Router) Group(name string) *Router {
 	return r
 }
 
-// Build builds the OpenAPI spec and registers handlers with Echo
-func (r *Router) Build(ref *openapi3.Reflector, app *echo.Echo) {
+// Build builds the OpenAPI spec and registers handlers with Fiber
+func (r *Router) Build(ref *openapi3.Reflector, app *fiber.App) {
 	for _, route := range r.routes {
 		if r.prefix != "" {
 			route.spec.AddPrefix(r.prefix)
@@ -155,70 +153,55 @@ func (r *Router) Build(ref *openapi3.Reflector, app *echo.Echo) {
 	}
 }
 
-func (r *Router) useRoute(route *Route, app *echo.Echo) {
-	if r.prefix == "" {
-		switch route.method {
-		case http.MethodGet:
-			app.GET(route.path, route.handler, route.mw...)
-		case http.MethodDelete:
-			app.DELETE(route.path, route.handler, route.mw...)
-		case http.MethodPost:
-			app.POST(route.path, route.handler, route.mw...)
-		case http.MethodPut:
-			app.PUT(route.path, route.handler, route.mw...)
-		case http.MethodPatch:
-			app.PATCH(route.path, route.handler, route.mw...)
-		}
-	} else {
-		app := app.Group(r.prefix)
+func (r *Router) useRoute(route *Route, app fiber.Router) {
+	if r.prefix != "" {
+		app = app.Group(r.prefix)
+	}
 
-		switch route.method {
-		case http.MethodGet:
-			app.GET(route.path, route.handler, route.mw...)
-		case http.MethodDelete:
-			app.DELETE(route.path, route.handler, route.mw...)
-		case http.MethodPost:
-			app.POST(route.path, route.handler, route.mw...)
-		case http.MethodPut:
-			app.PUT(route.path, route.handler, route.mw...)
-		case http.MethodPatch:
-			app.PATCH(route.path, route.handler, route.mw...)
-		}
+	switch route.method {
+	case http.MethodGet:
+		app.Get(route.path, route.handlers...)
+	case http.MethodDelete:
+		app.Delete(route.path, route.handlers...)
+	case http.MethodPost:
+		app.Post(route.path, route.handlers...)
+	case http.MethodPut:
+		app.Put(route.path, route.handlers...)
+	case http.MethodPatch:
+		app.Patch(route.path, route.handlers...)
 	}
 }
 
 // Get creates a GET route
-func Get[T interface{}](path string, handlerFunc echo.HandlerFunc, handlers ...echo.MiddlewareFunc) *Route {
+func Get[T interface{}](path string, handlers ...fiber.Handler) *Route {
 	pc, _, _, _ := runtime.Caller(1)
 
 	var t T
 
 	return &Route{
-		path:    path,
-		spec:    spec.Of(path, getPackage(pc)).Get(t),
-		method:  http.MethodGet,
-		handler: handlerFunc,
-		mw:      handlers,
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Get(t),
+		method:   http.MethodGet,
+		handlers: handlers,
 	}
 }
 
 // Delete creates a DELETE route
-func Delete[T interface{}](path string, handlerFunc echo.HandlerFunc, handlers ...echo.MiddlewareFunc) *Route {
+func Delete[T interface{}](path string, handlers ...fiber.Handler) *Route {
 	pc, _, _, _ := runtime.Caller(1)
 
 	var t T
 
 	return &Route{
-		path:    path,
-		spec:    spec.Of(path, getPackage(pc)).Delete(t),
-		method:  http.MethodDelete,
-		handler: handlerFunc,
-		mw:      handlers,
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Delete(t),
+		method:   http.MethodDelete,
+		handlers: handlers,
 	}
 }
 
 // Post creates a POST route
-func Post[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFunc, handlers ...echo.MiddlewareFunc) *Route {
+func Post[T interface{}, D interface{}](path string, handlers ...fiber.Handler) *Route {
 	pc, _, _, _ := runtime.Caller(1)
 
 	var (
@@ -227,16 +210,15 @@ func Post[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFun
 	)
 
 	return &Route{
-		path:    path,
-		spec:    spec.Of(path, getPackage(pc)).Post(t, d),
-		method:  http.MethodPost,
-		handler: handlerFunc,
-		mw:      handlers,
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Post(t, d),
+		method:   http.MethodPost,
+		handlers: handlers,
 	}
 }
 
 // Put creates a PUT route
-func Put[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFunc, handlers ...echo.MiddlewareFunc) *Route {
+func Put[T interface{}, D interface{}](path string, handlers ...fiber.Handler) *Route {
 	pc, _, _, _ := runtime.Caller(1)
 
 	var (
@@ -245,16 +227,15 @@ func Put[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFunc
 	)
 
 	return &Route{
-		path:    path,
-		spec:    spec.Of(path, getPackage(pc)).Put(t, d),
-		method:  http.MethodPut,
-		handler: handlerFunc,
-		mw:      handlers,
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Put(t, d),
+		method:   http.MethodPut,
+		handlers: handlers,
 	}
 }
 
 // Patch creates a PATCH route
-func Patch[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFunc, handlers ...echo.MiddlewareFunc) *Route {
+func Patch[T interface{}, D interface{}](path string, handlers ...fiber.Handler) *Route {
 	pc, _, _, _ := runtime.Caller(1)
 
 	var (
@@ -263,27 +244,24 @@ func Patch[T interface{}, D interface{}](path string, handlerFunc echo.HandlerFu
 	)
 
 	return &Route{
-		path:    path,
-		spec:    spec.Of(path, getPackage(pc)).Patch(t, d),
-		method:  http.MethodPatch,
-		handler: handlerFunc,
-		mw:      handlers,
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Patch(t, d),
+		method:   http.MethodPatch,
+		handlers: handlers,
 	}
 }
 
 // GetCtx parses and returns Ctx
-func GetCtx[B interface{}, P interface{}](c echo.Context) *Ctx[B, P] {
+func GetCtx[B interface{}, P interface{}](c *fiber.Ctx) *Ctx[B, P] {
 	var (
 		b B
 		p P
 	)
 
-	if err := c.Bind(&b); err != nil {
-		log.Trace().Err(err).Send()
+	if err := c.BodyParser(&b); err != nil {
 	}
 
-	if err := (&echo.DefaultBinder{}).BindPathParams(c, &p); err != nil {
-		log.Trace().Err(err).Send()
+	if err := c.ParamsParser(&p); err != nil {
 	}
 
 	return &Ctx[B, P]{

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/khvh/gwf/pkg/config"
-	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/jaeger"
@@ -15,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// New ...
 func New() {
 	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(config.Get().Telemetry.JaegerEndpoint)))
 	if err != nil {
@@ -46,9 +46,4 @@ func WithTracer(name string) trace.Tracer {
 // WithSpan returns a new span for tracer
 func WithSpan(ctx context.Context, tracer trace.Tracer, name string) (context.Context, trace.Span) {
 	return tracer.Start(ctx, name)
-}
-
-// WithEchoTracer gets the tracer from Echo's context
-func WithEchoTracer(c echo.Context) trace.Tracer {
-	return c.Get("otel-go-contrib-tracer-labstack-echo").(trace.Tracer)
 }

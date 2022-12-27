@@ -2,25 +2,26 @@ package main
 
 import (
 	"embed"
+	"path"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/core/dto"
 	"github.com/khvh/gwf/pkg/gwf"
 	"github.com/khvh/gwf/pkg/logger"
 	"github.com/khvh/gwf/pkg/router"
-	"github.com/labstack/echo/v4"
 )
 
-func h(c echo.Context) error {
-	return c.JSON(200, map[string]bool{"status": true})
+func h(c *fiber.Ctx) error {
+	return c.JSON(map[string]bool{"status": true})
 }
 
-func p(c echo.Context) error {
+func p(c *fiber.Ctx) error {
 	//asd := router.GetCtx[dto.Sample, dto.Sample](c)
 	//
 	//fmt.Println(asd.Body.ID)
 
-	return c.JSON(200, true)
+	return c.JSON(true)
 }
 
 //go:embed docs
@@ -38,7 +39,7 @@ func main() {
 
 	gwf.
 		Create(content).
-		// EnableTracing().
+		EnableTracing().
 		RegisterRoutes(
 			router.
 				Instance().
@@ -74,6 +75,6 @@ func main() {
 						Patch[dto.Sample, dto.Sample]("/2some/:id/path/:subId", h).Tags("2"),
 				),
 		).
-		//Frontend(ui, path.Join("ui")).
+		Frontend(ui, path.Join("ui")).
 		Run()
 }

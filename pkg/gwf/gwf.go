@@ -4,81 +4,59 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
+	"github.com/ansrivas/fiberprometheus/v2"
+	"github.com/gofiber/contrib/otelfiber"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
+	"github.com/gofiber/fiber/v2/middleware/monitor"
+	"github.com/gofiber/fiber/v2/middleware/proxy"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/khvh/gwf/pkg/telemetry"
 	"github.com/khvh/gwf/pkg/util"
-	"github.com/labstack/echo-contrib/prometheus"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog/log"
 	"github.com/swaggest/openapi-go/openapi3"
-	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
-	"go.opentelemetry.io/otel"
 )
 
 // App is a structure for handling application things
 type App struct {
-	server *echo.Echo
+	server *fiber.App
 	ref    *openapi3.Reflector
-}
-
-func getFileSystem(embededFiles embed.FS) http.FileSystem {
-	sub, err := fs.Sub(embededFiles, "docs")
-	if err != nil {
-		panic(err)
-	}
-
-	return http.FS(sub)
 }
 
 // Create creates a new application instance
 func Create(static embed.FS) *App {
 	id := config.Get().ID
 
-	otel.Tracer(id)
+	server := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+		Prefork:               config.Get().Server.Fork,
+	})
 
-	assetHandler := http.FileServer(getFileSystem(static))
+	server.Use("/docs", filesystem.New(filesystem.Config{
+		Root:       http.FS(static),
+		PathPrefix: "/docs",
+		Browse:     false,
+	}))
 
-	server := echo.New()
+	prometheus := fiberprometheus.New(id)
 
-	server.HideBanner = true
-	server.HidePort = true
+	prometheus.RegisterAt(server, "/metrics")
 
-	server.Pre(middleware.RemoveTrailingSlash())
-
-	server.GET("/docs", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
-	server.GET("/docs/*", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
-
-	server.Use(middleware.RequestID())
-	server.Use(middleware.CORS())
-	server.Use(middleware.Recover())
-
-	prometheus.NewPrometheus(id, nil).Use(server)
-
-	if config.Get().Server.Dev || config.Get().Server.Log {
-		server.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-			LogURI:    true,
-			LogStatus: true,
-			LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-				log.Trace().
-					Str("method", c.Request().Method).
-					Int("code", v.Status).
-					Str("uri", v.URI).
-					Str("from", c.Request().RemoteAddr).
-					Send()
-
-				return nil
-			},
-		}))
-	}
+	server.Use(prometheus.Middleware)
+	server.Use(requestid.New())
+	server.Use(recover.New())
+	server.Use(cors.New())
+	server.Get("/monitor", monitor.New(monitor.Config{Title: id}))
 
 	return &App{
 		ref:    router.InitReflector(),
@@ -86,16 +64,13 @@ func Create(static embed.FS) *App {
 	}
 }
 
-// EnableTracing enables tracing
 func (a *App) EnableTracing() *App {
 	telemetry.New()
-
-	a.server.Use(otelecho.Middleware(config.Get().ID))
+	a.server.Use(otelfiber.Middleware(config.Get().ID))
 
 	return a
 }
 
-// Frontend serves frontend project from ui dir
 func (a *App) Frontend(ui embed.FS, dir string) *App {
 	if !config.Get().Server.Dev || !config.Get().Server.UI {
 		return a
@@ -113,22 +88,26 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 			log.Trace().Err(err).Send()
 		}
 
-		var packageJSON map[string]interface{}
+		var packageJson map[string]interface{}
 
-		err = json.Unmarshal(file, &packageJSON)
+		err = json.Unmarshal(file, &packageJson)
 		if err != nil {
 			log.Trace().Err(err).Send()
 		} else {
-			fePort = int(packageJSON["devPort"].(float64))
+			fePort = int(packageJson["devPort"].(float64))
 		}
 
-		u, _ := url.Parse("http://localhost:" + strconv.Itoa(fePort))
+		a.server.Get("/*", func(c *fiber.Ctx) error {
+			err := proxy.
+				Do(c, strings.
+					ReplaceAll(c.Request().URI().String(), strconv.Itoa(config.Get().Server.Port), strconv.Itoa(fePort)),
+				)
+			if err != nil {
+				log.Err(err).Send()
+			}
 
-		a.server.Use(middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
-			{
-				URL: u,
-			},
-		})))
+			return c.Send(c.Response().Body())
+		})
 	} else {
 		return a.mountFrontend(ui, dir)
 	}
@@ -139,11 +118,11 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 func (a *App) mountFrontend(ui embed.FS, dir string) *App {
 	a.buildYarn(dir)
 
-	//a.server.Use("/*", filesystem.New(filesystem.Config{
-	//	Root:       http.FS(ui),
-	//	PathPrefix: "ui/dist",
-	//	Browse:     false,
-	//}))
+	a.server.Use("/*", filesystem.New(filesystem.Config{
+		Root:       http.FS(ui),
+		PathPrefix: "ui/dist",
+		Browse:     false,
+	}))
 
 	log.Trace().Msg("Frontend mounted")
 
@@ -186,18 +165,24 @@ func (a *App) RegisterRoutes(routes ...*router.Router) *App {
 		log.Fatal().Err(err)
 	}
 
-	a.server.GET("/spec/spec.json", func(c echo.Context) error {
+	a.server.Get("/spec/spec.json", func(c *fiber.Ctx) error {
 		c.Set("content-type", "application/openapi+json")
 
-		return c.String(http.StatusOK, string(jsonSchema))
+		return c.SendString(string(jsonSchema))
 	})
 
-	a.server.GET("/spec/spec.yaml", func(c echo.Context) error {
+	a.server.Get("/spec/spec.yaml", func(c *fiber.Ctx) error {
 		c.Set("content-type", "application/openapi+yaml")
 
-		return c.String(http.StatusOK, string(yamlSchema))
+		return c.SendString(string(yamlSchema))
 	})
 
+	return a
+}
+
+// Fiber registers routes directly with fiber
+func (a *App) Fiber(fn func(app *fiber.App)) *App {
+	fn(a.server)
 	return a
 }
 
@@ -222,5 +207,5 @@ func (a *App) Run() {
 
 	log.Info().Msgf("%s started 🚀", id)
 
-	log.Fatal().Err(a.server.Start(fmt.Sprintf("0.0.0.0:%d", port))).Send()
+	log.Fatal().Err(a.server.Listen(fmt.Sprintf("0.0.0.0:%d", port))).Send()
 }
