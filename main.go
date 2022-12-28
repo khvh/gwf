@@ -51,8 +51,9 @@ func main() {
 				Group("asd").
 				Prefix("/api/v1").
 				Register(
+					router.Get[dto.Sample]("", h),
 					router.
-						Get[dto.Sample]("/some/:id/path/:subId", h).Query("lol").Header("lmao").Summary("Testing summary").Description("kek").Tags("1"),
+						Get[dto.Sample]("/some/:id/path/:subId/", h).Query("lol").Header("lmao").Summary("Testing summary").Description("kek").Tags("1"),
 					router.
 						Delete[dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
 					router.

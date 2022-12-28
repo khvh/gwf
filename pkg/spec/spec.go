@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/swaggest/openapi-go/openapi3"
@@ -311,7 +312,7 @@ func (o *OAS) Build(ref *openapi3.Reflector) *OAS {
 		handleError(ref.SetRequest(&op, o.in, o.method))
 	}
 
-	handleError(ref.Spec.AddOperation(o.method, o.path, op))
+	handleError(ref.Spec.AddOperation(o.method, path.Clean(o.path), op))
 
 	return o
 }

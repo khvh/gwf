@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"path"
 	"runtime"
 	"strings"
 
@@ -58,7 +59,7 @@ func (r *Route) Query(name string) *Route {
 	return r
 }
 
-// Header sets a query param
+// Query sets a query param
 func (r *Route) Header(name string) *Route {
 	r.spec.AddHeaderParam(name)
 
@@ -179,6 +180,8 @@ func (r *Router) useRoute(route *Route, app fiber.Router) {
 		app = app.Group(r.prefix)
 	}
 
+	route.path = path.Clean(route.path)
+
 	switch route.method {
 	case http.MethodGet:
 		app.Get(route.path, route.handlers...)
@@ -200,8 +203,8 @@ func Get[T interface{}](path string, handlers ...fiber.Handler) *Route {
 	var t T
 
 	return &Route{
-		path:     strings.TrimRight(path, "/"),
-		spec:     spec.Of(strings.TrimRight(path, "/"), getPackage(pc)).Get(t),
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Get(t),
 		method:   http.MethodGet,
 		handlers: handlers,
 	}
@@ -214,8 +217,8 @@ func Delete[T interface{}](path string, handlers ...fiber.Handler) *Route {
 	var t T
 
 	return &Route{
-		path:     strings.TrimRight(path, "/"),
-		spec:     spec.Of(strings.TrimRight(path, "/"), getPackage(pc)).Delete(t),
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Delete(t),
 		method:   http.MethodDelete,
 		handlers: handlers,
 	}
@@ -231,8 +234,8 @@ func Post[T interface{}, D interface{}](path string, handlers ...fiber.Handler) 
 	)
 
 	return &Route{
-		path:     strings.TrimRight(path, "/"),
-		spec:     spec.Of(strings.TrimRight(path, "/"), getPackage(pc)).Post(t, d),
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Post(t, d),
 		method:   http.MethodPost,
 		handlers: handlers,
 	}
@@ -248,8 +251,8 @@ func Put[T interface{}, D interface{}](path string, handlers ...fiber.Handler) *
 	)
 
 	return &Route{
-		path:     strings.TrimRight(path, "/"),
-		spec:     spec.Of(strings.TrimRight(path, "/"), getPackage(pc)).Put(t, d),
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Put(t, d),
 		method:   http.MethodPut,
 		handlers: handlers,
 	}
@@ -265,8 +268,8 @@ func Patch[T interface{}, D interface{}](path string, handlers ...fiber.Handler)
 	)
 
 	return &Route{
-		path:     strings.TrimRight(path, "/"),
-		spec:     spec.Of(strings.TrimRight(path, "/"), getPackage(pc)).Patch(t, d),
+		path:     path,
+		spec:     spec.Of(path, getPackage(pc)).Patch(t, d),
 		method:   http.MethodPatch,
 		handlers: handlers,
 	}
