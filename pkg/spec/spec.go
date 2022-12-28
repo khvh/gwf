@@ -2,10 +2,11 @@ package spec
 
 import (
 	"fmt"
-	"github.com/swaggest/openapi-go/openapi3"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/swaggest/openapi-go/openapi3"
 )
 
 // JSONObject represents a map[string]interface{} shorthand
@@ -48,6 +49,8 @@ type OAS struct {
 	method      string
 	in          interface{}
 	params      []string
+	headers     []string
+	query       []string
 	out         []*apiResponse
 	tags        []string
 	summary     string
@@ -62,6 +65,20 @@ func Of(path string, tags ...string) *OAS {
 	}
 
 	return oas.parseParams()
+}
+
+// AddQueryParam adds query params to spec
+func (o *OAS) AddQueryParam(name string) *OAS {
+	o.query = append(o.query, name)
+
+	return o
+}
+
+// AddHeaderParam adds query params to spec
+func (o *OAS) AddHeaderParam(name string) *OAS {
+	o.headers = append(o.headers, name)
+
+	return o
 }
 
 // AddPrefix adds an url prefix
@@ -162,6 +179,11 @@ func (o *OAS) ReplaceTags(tags ...string) *OAS {
 	return o
 }
 
+// AddResponse adds an additional response to spec
+func (o *OAS) AddResponse(body interface{}, code int) *OAS {
+	return o.response(body, code)
+}
+
 func (o *OAS) withNotFound() *OAS {
 	return o.response(Error{}, http.StatusNotFound)
 }
@@ -212,6 +234,43 @@ func (o *OAS) parseParams() *OAS {
 	return o
 }
 
+func (o *OAS) createParam(id, location string) *openapi3.Parameter {
+	var t openapi3.SchemaType = "string"
+
+	param := openapi3.Parameter{}
+
+	param.
+		WithName(id).
+		WithIn(openapi3.ParameterInPath).
+		WithRequired(true).
+		WithContentItem(id, openapi3.MediaType{
+			Schema: &openapi3.SchemaOrRef{
+				Schema: &openapi3.Schema{
+					Title: &id,
+					Type:  &t,
+				},
+			},
+		})
+
+	if location == "header" {
+		param.
+			WithIn(openapi3.ParameterInHeader).
+			WithLocation(openapi3.ParameterLocation{
+				HeaderParameter: &openapi3.HeaderParameter{},
+			})
+	}
+
+	if location == "query" {
+		param.
+			WithIn(openapi3.ParameterInHeader).
+			WithLocation(openapi3.ParameterLocation{
+				QueryParameter: &openapi3.QueryParameter{},
+			})
+	}
+
+	return &param
+}
+
 // Build constructs the OpenAPI spec for a single request
 func (o *OAS) Build(ref *openapi3.Reflector) *OAS {
 	op := openapi3.Operation{}
@@ -221,27 +280,20 @@ func (o *OAS) Build(ref *openapi3.Reflector) *OAS {
 	)
 
 	for _, p := range o.params {
-		var t openapi3.SchemaType
-
-		t = "string"
-
-		param := openapi3.Parameter{}
-
-		param.
-			WithName(p).
-			WithIn(openapi3.ParameterInPath).
-			WithRequired(true).
-			WithContentItem("id", openapi3.MediaType{
-				Schema: &openapi3.SchemaOrRef{
-					Schema: &openapi3.Schema{
-						Title: &p,
-						Type:  &t,
-					},
-				},
-			})
-
 		params = append(params, openapi3.ParameterOrRef{
-			Parameter: &param,
+			Parameter: o.createParam(p, "path"),
+		})
+	}
+
+	for _, q := range o.query {
+		params = append(params, openapi3.ParameterOrRef{
+			Parameter: o.createParam(q, "query"),
+		})
+	}
+
+	for _, h := range o.headers {
+		params = append(params, openapi3.ParameterOrRef{
+			Parameter: o.createParam(h, "header"),
 		})
 	}
 

@@ -52,11 +52,11 @@ func main() {
 				Prefix("/api/v1").
 				Register(
 					router.
-						Get[dto.Sample]("/some/:id/path/:subId", h).Summary("Testing summary").Description("kek").Tags("1"),
+						Get[dto.Sample]("/some/:id/path/:subId", h).Query("lol").Header("lmao").Summary("Testing summary").Description("kek").Tags("1"),
 					router.
 						Delete[dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
 					router.
-						Post[dto.Sample, dto.Sample]("/some/:id/path", p).Tags("1"),
+						Post[dto.Sample, dto.Sample]("/some/:id/path", p).Tags("1").Query("lol"),
 					router.
 						Put[dto.Sample, dto.Sample]("/some/:id/path/:subId", h).Tags("1"),
 					router.

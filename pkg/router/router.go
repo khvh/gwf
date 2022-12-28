@@ -51,6 +51,27 @@ func (r *Route) Description(description string) *Route {
 	return r
 }
 
+// Query sets a query param
+func (r *Route) Query(name string) *Route {
+	r.spec.AddQueryParam(name)
+
+	return r
+}
+
+// Header sets a query param
+func (r *Route) Header(name string) *Route {
+	r.spec.AddHeaderParam(name)
+
+	return r
+}
+
+// Res adds a response to spec
+func (r *Route) Res(body interface{}, code int) *Route {
+	r.spec.AddResponse(body, code)
+
+	return r
+}
+
 // Router holds the reference for openapi3.Reflector and routes
 type Router struct {
 	prefix string
