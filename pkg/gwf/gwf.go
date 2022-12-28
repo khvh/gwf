@@ -64,6 +64,13 @@ func Create(static embed.FS) *App {
 	}
 }
 
+// Configure adds the ability to configure additional things for Fiber
+func (a *App) Configure(fn func(*fiber.App)) *App {
+	fn(a.server)
+
+	return a
+}
+
 func (a *App) EnableTracing() *App {
 	telemetry.New()
 	a.server.Use(otelfiber.Middleware(config.Get().ID))

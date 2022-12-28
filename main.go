@@ -39,6 +39,11 @@ func main() {
 
 	gwf.
 		Create(content).
+		Configure(func(a *fiber.App) {
+			a.Get("/lmao", func(c *fiber.Ctx) error {
+				return c.JSON(true)
+			})
+		}).
 		EnableTracing().
 		RegisterRoutes(
 			router.
