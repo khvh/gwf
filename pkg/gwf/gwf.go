@@ -4,10 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"github.com/khvh/gwf/pkg/queue"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"go.opentelemetry.io/otel"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -15,6 +11,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/khvh/gwf/pkg/queue"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/otel"
 
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
@@ -63,7 +64,7 @@ func Create(static embed.FS) *App {
 
 	prometheus.NewPrometheus(id, nil).Use(server)
 
-	if config.Get().Server.Dev || config.Get().Server.Log {
+	if config.Get().Server.Log {
 		server.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 			LogURI:    true,
 			LogStatus: true,
