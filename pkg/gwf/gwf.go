@@ -4,59 +4,81 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"github.com/khvh/gwf/pkg/queue"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/otel"
+	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 
-	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/contrib/otelfiber"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/monitor"
-	"github.com/gofiber/fiber/v2/middleware/proxy"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/khvh/gwf/pkg/config"
 	"github.com/khvh/gwf/pkg/router"
 	"github.com/khvh/gwf/pkg/telemetry"
 	"github.com/khvh/gwf/pkg/util"
+	"github.com/labstack/echo-contrib/prometheus"
 	"github.com/rs/zerolog/log"
 	"github.com/swaggest/openapi-go/openapi3"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 // App is a structure for handling application things
 type App struct {
-	server *fiber.App
+	server *echo.Echo
 	ref    *openapi3.Reflector
+}
+
+func getFileSystem(embededFiles embed.FS) http.FileSystem {
+	sub, err := fs.Sub(embededFiles, "docs")
+	if err != nil {
+		panic(err)
+	}
+
+	return http.FS(sub)
 }
 
 // Create creates a new application instance
 func Create(static embed.FS) *App {
 	id := config.Get().ID
 
-	server := fiber.New(fiber.Config{
-		DisableStartupMessage: true,
-		Prefork:               config.Get().Server.Fork,
-	})
+	otel.Tracer(id)
 
-	server.Use("/docs", filesystem.New(filesystem.Config{
-		Root:       http.FS(static),
-		PathPrefix: "/docs",
-		Browse:     false,
-	}))
+	assetHandler := http.FileServer(getFileSystem(static))
 
-	prometheus := fiberprometheus.New(id)
+	server := echo.New()
 
-	prometheus.RegisterAt(server, "/metrics")
+	server.HideBanner = true
+	server.HidePort = true
 
-	server.Use(prometheus.Middleware)
-	server.Use(requestid.New())
-	server.Use(recover.New())
-	server.Use(cors.New())
-	server.Get("/monitor", monitor.New(monitor.Config{Title: id}))
+	server.GET("/docs", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
+	server.GET("/docs/*", echo.WrapHandler(http.StripPrefix("/docs", assetHandler)))
+
+	server.Use(middleware.RequestID())
+	server.Use(middleware.CORS())
+	server.Use(middleware.Recover())
+
+	prometheus.NewPrometheus(id, nil).Use(server)
+
+	if config.Get().Server.Dev || config.Get().Server.Log {
+		server.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+			LogURI:    true,
+			LogStatus: true,
+			LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+				log.Trace().
+					Str("method", c.Request().Method).
+					Int("code", v.Status).
+					Str("uri", v.URI).
+					Str("from", c.Request().RemoteAddr).
+					Send()
+
+				return nil
+			},
+		}))
+	}
 
 	return &App{
 		ref:    router.InitReflector(),
@@ -65,15 +87,18 @@ func Create(static embed.FS) *App {
 }
 
 // Configure adds the ability to configure additional things for Fiber
-func (a *App) Configure(fn func(*fiber.App)) *App {
+func (a *App) Configure(fn func(*echo.Echo)) *App {
 	fn(a.server)
 
 	return a
 }
 
 func (a *App) EnableTracing() *App {
+	id := strings.ReplaceAll(config.Get().ID, "-", "_")
+
 	telemetry.New()
-	a.server.Use(otelfiber.Middleware(config.Get().ID))
+
+	a.server.Use(otelecho.Middleware(id))
 
 	return a
 }
@@ -95,26 +120,22 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 			log.Trace().Err(err).Send()
 		}
 
-		var packageJson map[string]interface{}
+		var packageJSON map[string]interface{}
 
-		err = json.Unmarshal(file, &packageJson)
+		err = json.Unmarshal(file, &packageJSON)
 		if err != nil {
 			log.Trace().Err(err).Send()
 		} else {
-			fePort = int(packageJson["devPort"].(float64))
+			fePort = int(packageJSON["devPort"].(float64))
 		}
 
-		a.server.Get("/*", func(c *fiber.Ctx) error {
-			err := proxy.
-				Do(c, strings.
-					ReplaceAll(c.Request().URI().String(), strconv.Itoa(config.Get().Server.Port), strconv.Itoa(fePort)),
-				)
-			if err != nil {
-				log.Err(err).Send()
-			}
+		u, _ := url.Parse("http://localhost:" + strconv.Itoa(fePort))
 
-			return c.Send(c.Response().Body())
-		})
+		a.server.Use(middleware.Proxy(middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
+			{
+				URL: u,
+			},
+		})))
 	} else {
 		return a.mountFrontend(ui, dir)
 	}
@@ -124,12 +145,12 @@ func (a *App) Frontend(ui embed.FS, dir string) *App {
 
 func (a *App) mountFrontend(ui embed.FS, dir string) *App {
 	a.buildYarn(dir)
-
-	a.server.Use("/*", filesystem.New(filesystem.Config{
-		Root:       http.FS(ui),
-		PathPrefix: "ui/dist",
-		Browse:     false,
-	}))
+	//
+	//a.server.Use("/*", filesystem.New(filesystem.Config{
+	//	Root:       http.FS(ui),
+	//	PathPrefix: "ui/dist",
+	//	Browse:     false,
+	//}))
 
 	log.Trace().Msg("Frontend mounted")
 
@@ -172,24 +193,37 @@ func (a *App) RegisterRoutes(routes ...*router.Router) *App {
 		log.Fatal().Err(err)
 	}
 
-	a.server.Get("/spec/spec.json", func(c *fiber.Ctx) error {
-		c.Set("content-type", "application/openapi+json")
+	a.server.GET("/spec/spec.json", func(c echo.Context) error {
+		c.Response().Header().Set("content-type", "application/openapi+json")
 
-		return c.SendString(string(jsonSchema))
+		return c.String(http.StatusOK, string(jsonSchema))
 	})
 
-	a.server.Get("/spec/spec.yaml", func(c *fiber.Ctx) error {
-		c.Set("content-type", "application/openapi+yaml")
+	a.server.GET("/spec/spec.yaml", func(c echo.Context) error {
+		c.Response().Header().Set("content-type", "application/openapi+yaml")
 
-		return c.SendString(string(yamlSchema))
+		return c.String(http.StatusOK, string(yamlSchema))
 	})
 
 	return a
 }
 
-// Fiber registers routes directly with fiber
-func (a *App) Fiber(fn func(app *fiber.App)) *App {
-	fn(a.server)
+// Queue creates an Asynq queue and mounts the web interface
+func (a *App) Queue(fn func(q *queue.Queue)) *App {
+	q := queue.
+		CreateServer("127.0.0.1:6379", 11, queue.Queues{
+			"critical": 6,
+			"default":  3,
+			"low":      1,
+		}).
+		MountMonitor("127.0.0.1:6379", "", a.server)
+
+	fn(q)
+
+	q.Run()
+
+	log.Trace().Msgf("Asynq running on http://0.0.0.0:%d/monitoring/tasks", config.Get().Server.Port)
+
 	return a
 }
 
@@ -214,5 +248,5 @@ func (a *App) Run() {
 
 	log.Info().Msgf("%s started 🚀", id)
 
-	log.Fatal().Err(a.server.Listen(fmt.Sprintf("0.0.0.0:%d", port))).Send()
+	log.Fatal().Err(a.server.Start(fmt.Sprintf("0.0.0.0:%d", port))).Send()
 }
